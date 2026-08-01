@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  normalizeApiBase, parseJson, parseSearchResults, parseSogouResults,
+  normalizeApiBase, parseJson, parseSearchResults, parseSogouResults, parseJinaSearchResults, decodeBingRedirect, mergeLead,
   roundRobin, removeUnsupportedInferences, normalizeFitScore, settleWithConcurrency,
   isFallbackRelevant, buildPublicSearchQueries, pickBestDescription, sourceAvailableForProfile, getProfileSourceSites,
   professionalSearchPlan
@@ -18,6 +18,11 @@ test('不会重复添加 /v1', () => {
 
 test('兼容代码块包裹的 JSON', () => {
   assert.deepEqual(parseJson('```json\n{"jobs":[]}\n```'), { jobs: [] });
+});
+
+test('模型返回的数组尾部损坏时仍提取已经完整的岗位对象', () => {
+  const broken = '{"jobs":[{"title":"远景能源2027届校招","source_url":"https://example.com/1"},{"title":"损坏对象","source_url":]';
+  assert.deepEqual(parseJson(broken), { jobs: [{ title: '远景能源2027届校招', source_url: 'https://example.com/1' }] });
 });
 
 test('提取公开搜索结果的原始链接与摘要', () => {
@@ -38,6 +43,19 @@ test('提取搜狗结果中的直接来源链接', () => {
     snippet: '招聘土木工程毕业生',
     date: ''
   });
+});
+
+test('解析可公开读取的 Bing 搜索结果并还原真实链接', () => {
+  const target = 'https://envision-career.com/';
+  const redirect = `https://www.bing.com/ck/a?u=a1${Buffer.from(target).toString('base64url')}&ntb=1`;
+  assert.equal(decodeBingRedirect(redirect), target);
+  const markdown = `## [远景能源2027届全球校园招聘正式启动](${redirect})\n4 days ago · 面向2027届毕业生，网申已经开始。`;
+  assert.deepEqual(parseJinaSearchResults(markdown), [{
+    title: '远景能源2027届全球校园招聘正式启动',
+    source_url: target,
+    snippet: '4 days ago · 面向2027届毕业生，网申已经开始。',
+    date: '4 days ago'
+  }]);
 });
 
 test('土木画像同时生成电力、汽车、制造业和能力型检索词', () => {
@@ -69,13 +87,26 @@ test('公开搜索会定向覆盖重点企业，而不是只依赖行业关键�
   assert.match(queries, /比亚迪/);
   assert.match(queries, /中国航天科技/);
   assert.match(queries, /山东能源集团/);
-  assert.match(queries, /2027届 校园招聘 提前批 秋招/);
+  assert.match(queries, /远景能源 2027届 提前批 校园招聘/);
 });
 
 test('不同搜索方向按轮次交错，避免传统行业占满前排', () => {
   assert.deepEqual(roundRobin([['传统1', '传统2'], ['能源1', '能源2'], ['车企1']]), [
     '传统1', '能源1', '车企1', '传统2', '能源2'
   ]);
+});
+
+test('同一链接重复出现时保留重点企业查询附带的官网信息', () => {
+  const merged = mergeLead({
+    title: '远景能源2027届校招', source_url: 'https://example.com/envision', snippet: '校招启动'
+  }, {
+    title: '远景能源2027届校招', source_url: 'https://example.com/envision', snippet: '提前批正式启动',
+    company: '远景能源', watchlist_company: true, apply_url: 'https://envision-career.com/',
+    application_channels: [{ type: '官网网申', url: 'https://envision-career.com/' }]
+  });
+  assert.equal(merged.watchlist_company, true);
+  assert.equal(merged.company, '远景能源');
+  assert.equal(merged.apply_url, 'https://envision-career.com/');
 });
 
 test('来源按画像学校和省份授权，公共及旧来源始终可用', () => {
@@ -149,4 +180,8 @@ test('模型超时时只保留相关具体招聘页', () => {
     title: '2027届智能驾驶算法工程师', company: '某科技公司',
     source_url: 'https://career.example.com/ai', snippet: '计算机视觉算法'
   }), false);
+  assert.equal(isFallbackRelevant(profile, {
+    title: '远景能源2027届全球校园招聘', company: '远景能源', watchlist_company: true,
+    source_url: 'https://career.example.com/envision', snippet: '提前批已经启动'
+  }), true);
 });

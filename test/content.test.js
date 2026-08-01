@@ -30,3 +30,13 @@ test('从招聘原文提取地点、日期、要求和官方待遇', () => {
 test('拒绝无效日期', () => {
   assert.equal(normalizeDate('2026', '2', '31'), '');
 });
+
+test('网申时间为日期范围时使用结束日期作为截止日期', () => {
+  const result = extractFacts('网申时间：2026-07-28 ~ 2026-10-31\n发布日期：2026-07-28');
+  assert.equal(result.deadline, '2026-10-31');
+});
+
+test('不会把聚合页相似职位的截止日期记到当前岗位', () => {
+  const result = extractFacts('网申时间：2026-07-28 ~ 2026-10-31\n免责声明：以下为其他内容\n12月后截止\n2026-08-01 ~ 2027-08-03');
+  assert.equal(result.deadline, '2026-10-31');
+});

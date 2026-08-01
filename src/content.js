@@ -207,6 +207,14 @@ function extractDate(text, labels) {
   return match ? normalizeDate(match[1], match[2], match[3]) : '';
 }
 
+function extractRangeEnd(text, labels) {
+  const separator = '[年\\-/.]';
+  const date = `(20\\d{2})${separator}(\\d{1,2})[月\\-/.](\\d{1,2})(?:日)?`;
+  const pattern = new RegExp(`(?:${labels})[^\\n\\d]{0,12}${date}[^\\n]{0,24}?(?:~|～|至|到|—|–|-)\\s*${date}`, 'i');
+  const match = String(text).match(pattern);
+  return match ? normalizeDate(match[4], match[5], match[6]) : '';
+}
+
 function section(lines, starts, ends, limit = 1200) {
   const start = lines.findIndex((line) => starts.some((pattern) => pattern.test(line)));
   if (start < 0) return '';
@@ -223,10 +231,14 @@ function section(lines, starts, ends, limit = 1200) {
 function extractFacts(text) {
   const value = cleanText(text);
   const lines = value.split('\n');
-  const locationMatch = value.match(/(?:工作|招聘|任职|办公)地点\s*[：:]\s*([^\n，,；;]{1,30})/i);
+  // 聚合站常把“相似职位”和列表页正文拼在当前公告后面。日期与地点只读取
+  // 当前公告主体，避免把后续其他公司的截止日期误记到本岗位。
+  const focusedValue = value.split(/\n(?:免责声明|上一职位|下一职位|FAQ\s|牛大妈找到相似职位|相关推荐)/i)[0].slice(0, 12_000);
+  const locationMatch = focusedValue.match(/(?:工作|招聘|任职|办公)地点\s*[：:]\s*([^\n，,；;]{1,30})/i);
   const city = String(locationMatch?.[1] || '').replace(/[。.]$/, '').trim();
-  const deadline = extractDate(value, '过期时间|截止(?:时间|日期)?|报名截止|网申截止');
-  const published_at = extractDate(value, '发布时间|发布日期|更新日期');
+  const deadline = extractDate(focusedValue, '过期时间|截止(?:时间|日期)?|报名截止|网申截止')
+    || extractRangeEnd(focusedValue, '网申时间|报名时间|申请时间|投递时间');
+  const published_at = extractDate(focusedValue, '发布时间|发布日期|更新日期');
   const official_benefits = section(
     lines,
     [/^[●•◆■\s]*薪酬福利\s*[：:]?/i, /^[●•◆■\s]*(?:福利待遇|薪资待遇|薪酬待遇)\s*[：:]?/i],
@@ -241,4 +253,4 @@ function extractFacts(text) {
   return { city, deadline, published_at, official_benefits, description };
 }
 
-module.exports = { assertPublicUrl, cleanText, decodePackedHtml, extractFacts, htmlToText, readPage, normalizeDate };
+module.exports = { assertPublicUrl, cleanText, decodePackedHtml, extractFacts, htmlToText, readPage, normalizeDate, extractRangeEnd };

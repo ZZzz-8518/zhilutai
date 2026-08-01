@@ -11,7 +11,7 @@ const VERIFIED_SOCIAL_REVIEWS = require('./src/verified-social-reviews');
 
 const PORT = Number(process.env.PORT) || 4177;
 const HOST = '127.0.0.1';
-const APP_VERSION = 6;
+const APP_VERSION = 7;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 const collectingProfiles = new Set();
@@ -59,8 +59,12 @@ async function collectForProfile(profileId, triggerType = 'manual') {
         ai_summary: job.ai_summary
       }, profileId);
     }
-    finishRun(runId, 'success', result.jobs.length, result.response_id ? `响应 ${result.response_id}` : '采集完成');
-    return { count: result.jobs.length, citations: result.citations };
+    const stats = result.search_stats;
+    const message = stats
+      ? `执行${stats.query_count}组检索，发现${stats.searched_count + stats.direct_count}条线索，核验${stats.candidate_count}条，保留${result.jobs.length}条岗位`
+      : (result.response_id ? `响应 ${result.response_id}` : '采集完成');
+    finishRun(runId, 'success', result.jobs.length, message);
+    return { count: result.jobs.length, citations: result.citations, search_stats: stats };
   } catch (error) {
     finishRun(runId, 'failed', 0, error.message);
     throw error;

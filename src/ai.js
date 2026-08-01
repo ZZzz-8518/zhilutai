@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { getSettings, getJobs, DATA_DIR } = require('./db');
+const crypto = require('node:crypto');
+const { getSettings, getJobs, getSearchCache, setSearchCache, DATA_DIR } = require('./db');
 const { inferEmploymentType, normalizeList } = require('./scoring');
 const { readPage, extractFacts } = require('./content');
 const { getSearchWatchlist } = require('./company');
@@ -22,7 +23,40 @@ function parseJson(text) {
   try { return JSON.parse(cleaned); } catch {}
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
-  if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(cleaned.slice(start, end + 1)); } catch {}
+  }
+  for (const key of ['jobs', 'reviews']) {
+    const keyIndex = cleaned.indexOf(`"${key}"`);
+    const arrayStart = keyIndex >= 0 ? cleaned.indexOf('[', keyIndex) : -1;
+    if (arrayStart < 0) continue;
+    const items = [];
+    let objectStart = -1;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let index = arrayStart + 1; index < cleaned.length; index += 1) {
+      const char = cleaned[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') quoted = false;
+        continue;
+      }
+      if (char === '"') { quoted = true; continue; }
+      if (char === '{') {
+        if (depth === 0) objectStart = index;
+        depth += 1;
+      } else if (char === '}' && depth > 0) {
+        depth -= 1;
+        if (depth === 0 && objectStart >= 0) {
+          try { items.push(JSON.parse(cleaned.slice(objectStart, index + 1))); } catch {}
+          objectStart = -1;
+        }
+      } else if (char === ']' && depth === 0) break;
+    }
+    if (items.length) return { [key]: items };
+  }
   throw new Error('AI 返回内容无法解析为岗位数据');
 }
 
@@ -73,6 +107,36 @@ function parseSogouResults(html) {
     });
   }
   return results;
+}
+
+function decodeBingRedirect(value) {
+  try {
+    const url = new URL(value);
+    const encoded = url.hostname.endsWith('bing.com') ? url.searchParams.get('u') : '';
+    if (encoded?.startsWith('a1')) {
+      const decoded = Buffer.from(encoded.slice(2), 'base64url').toString('utf8');
+      if (/^https?:\/\//i.test(decoded)) return decoded;
+    }
+    return url.toString();
+  } catch { return ''; }
+}
+
+function parseJinaSearchResults(markdown) {
+  const text = String(markdown || '');
+  const headings = [...text.matchAll(/^## \[([^\]]+)\]\((https?:\/\/[^)]+)\)/gm)];
+  return headings.map((match, index) => {
+    const start = match.index + match[0].length;
+    const end = headings[index + 1]?.index ?? text.length;
+    const snippet = text.slice(start, end).replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\s+/g, ' ').trim().slice(0, 1200);
+    return {
+      title: stripHtml(match[1]),
+      source_url: decodeBingRedirect(match[2]),
+      snippet,
+      date: snippet.match(/(?:\d+\s*(?:days?|hours?) ago|\d{4}[-年]\d{1,2}(?:[-月]\d{1,2}日?)?)/i)?.[0] || ''
+    };
+  }).filter((item) => /^https?:\/\//i.test(item.source_url)
+    && !/(?:^|\.)bing\.com$/i.test((() => { try { return new URL(item.source_url).hostname; } catch { return ''; } })()));
 }
 
 function profileSummary(profile) {
@@ -159,6 +223,21 @@ ${outputContract()}
 }
 
 function buildGroundedPrompt(profile, leads) {
+  const compactLeads = leads.map((lead) => ({
+    title: lead.title,
+    company: lead.company || '',
+    city: lead.city || '',
+    source_url: lead.source_url,
+    source_name: lead.source_name || '',
+    apply_url: lead.apply_url || '',
+    application_channels: lead.application_channels || [],
+    company_type: lead.company_type || '',
+    snippet: String(lead.snippet || '').slice(0, 1000),
+    source_text: String(lead.source_text || '').slice(0, 2500),
+    deadline: lead.deadline || '',
+    published_at: lead.published_at || '',
+    official_benefits: lead.official_benefits || ''
+  }));
   return `你是中国校园招聘信息整理员。根据下面已经检索到的网页线索，为候选人筛选 2027 届正式校招或提前批岗位。
 
 候选人画像：${profileSummary(profile)}
@@ -176,7 +255,7 @@ function buildGroundedPrompt(profile, leads) {
 10. 公司介绍与招聘信息分开。social_reviews 每一条都必须有 source_url；没有来源就返回空数组。company_type 必须按给定枚举分类。
 
 网页线索：
-${JSON.stringify(leads)}
+${JSON.stringify(compactLeads)}
 
 ${outputContract()}
 
@@ -196,6 +275,25 @@ function urlKey(value) {
     const search = params.length ? `?${new URLSearchParams(params)}` : '';
     return `${url.hostname}${url.pathname}${search}`.replace(/\/$/, '').toLowerCase();
   } catch { return ''; }
+}
+
+function mergeLead(existing, incoming) {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  const preferred = incoming.watchlist_company && !existing.watchlist_company ? incoming : existing;
+  const secondary = preferred === existing ? incoming : existing;
+  return {
+    ...secondary,
+    ...preferred,
+    snippet: String(preferred.snippet || '').length >= String(secondary.snippet || '').length
+      ? preferred.snippet : secondary.snippet,
+    source_url: preferred.source_url || secondary.source_url,
+    company: preferred.company || secondary.company || '',
+    apply_url: preferred.apply_url || secondary.apply_url || '',
+    company_type: preferred.company_type || secondary.company_type || '',
+    application_channels: (preferred.application_channels || []).length
+      ? preferred.application_channels : (secondary.application_channels || [])
+  };
 }
 
 function normalizeFitScore(value) {
@@ -255,6 +353,9 @@ function isFallbackRelevant(profile, lead) {
     if ((url.pathname === '/' || /\/h\.php$|\/zhaopin\//i.test(url.pathname)) && !lead.company) return false;
     if (/mp\.weixin\.qq\.com\/count\//i.test(lead.source_url)) return false;
   } catch { return false; }
+  // 重点企业是通过逐家公司定向检索得到的。搜索摘要常常不展示完整专业列表，
+  // 因此先作为“表述模糊”保留，不能在模型异常时仅凭摘要把整家公司删掉。
+  if (lead.watchlist_company === true) return true;
   if (!lead.company && /就业信息网|招聘信息[_ |]|校园招聘资料|招聘信息$/.test(lead.title || '')) return false;
   const profileTerms = [profile.major, ...normalizeList(profile.related_majors), ...normalizeList(profile.skills)]
     .filter((term) => String(term).length >= 2);
@@ -424,10 +525,7 @@ function buildPublicSearchQueries(profile, settings = {}) {
   const plan = professionalSearchPlan(profile);
   const relevantWatchlist = getSearchWatchlist(profile);
   const employerQueries = [];
-  for (let index = 0; index < relevantWatchlist.length; index += 8) {
-    const names = relevantWatchlist.slice(index, index + 8).map((item) => `"${item.name}"`).join(' OR ');
-    employerQueries.push(`(${names}) 2027届 校园招聘 提前批 秋招`);
-  }
+  for (const item of relevantWatchlist) employerQueries.push(`${item.name} 2027届 提前批 校园招聘`);
   return [
     `2027年 高校毕业生 招聘简章 ${major}`,
     `2027届 校园招聘 ${major}`,
@@ -451,35 +549,77 @@ function buildPublicSearchQueries(profile, settings = {}) {
   ];
 }
 
+async function searchJinaBing(query) {
+  const cacheKey = `jina-bing-v1:${crypto.createHash('sha256').update(query).digest('hex')}`;
+  const cached = getSearchCache(cacheKey, 8 * 60 * 60 * 1000);
+  if (Array.isArray(cached)) return cached;
+  const target = `http://www.bing.com/search?q=${encodeURIComponent(query)}`;
+  const response = await fetch(`https://r.jina.ai/${target}`, {
+    headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'text/markdown' },
+    signal: AbortSignal.timeout(35_000)
+  });
+  if (!response.ok) throw new Error(`公开搜索失败 (${response.status})`);
+  const results = parseJinaSearchResults(await response.text());
+  setSearchCache(cacheKey, results);
+  return results;
+}
+
 async function searchPublicLeads(profile, settings = {}) {
   const queries = buildPublicSearchQueries(profile, settings);
-  const queryGroups = [];
+  const watchlist = getSearchWatchlist(profile);
   async function fetchPage(url, parser) {
     try {
       const response = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36' },
-        signal: AbortSignal.timeout(25000)
+        signal: AbortSignal.timeout(18_000)
       });
       return response.ok ? parser(await response.text()) : [];
     } catch { return []; }
   }
-  for (const query of [...new Set(queries)]) {
-    const encoded = encodeURIComponent(query);
-    const pair = await Promise.all([
-      fetchPage(`https://www.so.com/s?q=${encoded}`, parseSearchResults),
-      fetchPage(`https://www.sogou.com/web?query=${encoded}`, parseSogouResults)
-    ]);
-    queryGroups.push(pair.flat());
-  }
+  const uniqueQueries = [...new Set(queries)];
+  const queryGroups = new Array(uniqueQueries.length).fill(null).map(() => []);
+  await settleWithConcurrency(uniqueQueries, 5, async (query, index) => {
+    const cacheKey = `public-query-v5:${crypto.createHash('sha256').update(query).digest('hex')}`;
+    const cached = getSearchCache(cacheKey, 2 * 60 * 60 * 1000);
+    let results = Array.isArray(cached) ? cached : null;
+    if (!results) {
+      const encoded = encodeURIComponent(query);
+      results = await fetchPage(`https://www.sogou.com/web?query=${encoded}`, parseSogouResults);
+      if (results.length < 2) {
+        try { results.push(...await searchJinaBing(query)); } catch {}
+      }
+      const byResultUrl = new Map();
+      for (const item of results) if (!byResultUrl.has(urlKey(item.source_url))) byResultUrl.set(urlKey(item.source_url), item);
+      results = [...byResultUrl.values()];
+      setSearchCache(cacheKey, results);
+    }
+    const queriedCompanies = watchlist.filter((item) => query.includes(item.name));
+    queryGroups[index] = results.map((lead) => {
+      const text = `${lead.title || ''} ${lead.snippet || ''}`;
+      const company = queriedCompanies.find((item) => item.aliases.some((alias) => text.includes(alias)));
+      if (!company?.recruitment_url) return lead;
+      return {
+        ...lead,
+        company: company.name,
+        watchlist_company: true,
+        apply_url: company.recruitment_url,
+        company_type: company.company_type,
+        application_channels: [{
+          type: '官网网申', label: `${company.name}校园招聘官网`, url: company.recruitment_url, source_url: lead.source_url
+        }]
+      };
+    });
+  });
   const unique = new Map();
   for (const lead of roundRobin(queryGroups)) {
     const text = `${lead.title} ${lead.snippet}`;
-    const relevant = /2027/.test(text) && /(校招|校园招聘|高校毕业生|应届毕业生|秋季招聘|招聘简章)/i.test(text);
-    if (relevant && inferEmploymentType(text) !== '实习' && !unique.has(urlKey(lead.source_url))) {
-      unique.set(urlKey(lead.source_url), lead);
+    const relevant = /(?:2027|27届)/.test(text) && /(校招|校园招聘|高校毕业生|应届毕业生|秋季招聘|招聘简章|提前批|全球招聘|正式启动)/i.test(text);
+    if (relevant && inferEmploymentType(text) !== '实习') {
+      const key = urlKey(lead.source_url);
+      unique.set(key, mergeLead(unique.get(key), lead));
     }
   }
-  return [...unique.values()].slice(0, 60);
+  return { leads: [...unique.values()].slice(0, 120), query_count: uniqueQueries.length };
 }
 
 function writeDiagnostic(name, content) {
@@ -490,16 +630,22 @@ function writeDiagnostic(name, content) {
 async function discoverWithPublicSearch(profile, settings) {
   const sourceSites = getProfileSourceSites(settings.source_sites, profile);
   const profileSettings = { ...settings, source_sites: sourceSites };
-  const [searched, direct] = await Promise.all([
+  const [searchResult, direct] = await Promise.all([
     searchPublicLeads(profile, profileSettings),
     collectConfiguredSources(sourceSites)
   ]);
+  const searched = searchResult.leads;
   const unique = new Map();
-  for (const lead of roundRobin([direct, searched])) if (!unique.has(urlKey(lead.source_url))) unique.set(urlKey(lead.source_url), lead);
-  const known = new Set(getJobs().map((job) => urlKey(job.source_url)));
-  const leads = [...unique.values()].filter((lead) => !known.has(urlKey(lead.source_url))).slice(0, 60);
-  if (!leads.length) return { jobs: [], citations: [], response_id: 'no-new-results' };
-  return structureLeadsWithChat(profile, settings, leads);
+  for (const lead of roundRobin([direct, searched])) {
+    const key = urlKey(lead.source_url);
+    unique.set(key, mergeLead(unique.get(key), lead));
+  }
+  const refreshBefore = Date.now() - 12 * 60 * 60 * 1000;
+  const known = new Map(getJobs().map((job) => [urlKey(job.source_url), new Date(job.last_seen_at || 0).getTime()]));
+  const leads = [...unique.values()].filter((lead) => (known.get(urlKey(lead.source_url)) || 0) < refreshBefore).slice(0, 60);
+  const searchStats = { query_count: searchResult.query_count, searched_count: searched.length, direct_count: direct.length, candidate_count: leads.length };
+  if (!leads.length) return { jobs: [], citations: [], response_id: 'no-new-results', search_stats: searchStats };
+  return { ...(await structureLeadsWithChat(profile, settings, leads)), search_stats: searchStats };
 }
 
 function configuredProvider(settings) {
@@ -529,7 +675,7 @@ async function reviewJobsWithSecondary(profile, settings, leads, jobs) {
   const leadFacts = leads.map((lead) => ({
     title: lead.title,
     source_url: lead.source_url,
-    source_text: String(lead.source_text || lead.snippet || '').slice(0, 3500)
+    source_text: String(lead.source_text || lead.snippet || '').slice(0, 1500)
   }));
   const prompt = `你是校园招聘复核员。请独立核验初审结果，只能依据给定招聘原文和搜索摘录，不得补写摘录中没有的事实。
 
@@ -540,6 +686,7 @@ async function reviewJobsWithSecondary(profile, settings, leads, jobs) {
 
 逐条复核专业报名口径、适配度、截止日期、公司类型和投递入口。没有明确专业要求时不能称为“专业不限”。apply_url 必须是官方招聘网、网申页，或确实带申请/投递功能的招聘平台详情页。邮箱、内推、线下双选会等放入 application_channels。社交评价只能保留摘录中带原始链接的内容，没有来源则留空。只输出 JSON：
 {"reviews":[{"source_url":"","eligibility":"明确符合/宽口径符合/未限制专业/优先但不排他/表述模糊/明确不符合","fit_score":0,"deadline":"YYYY-MM-DD或空","apply_url":"","application_channels":[{"type":"官网网申/招聘平台/邮箱/内推/线下","label":"","url":"","value":"","source_url":""}],"company_type":"央企/地方国企/事业单位/大型民企或大厂/外企/中小企业/其他","social_reviews":[{"topic":"待遇/笔试/面试/工作体验","sentiment":"正面/中性/负面","summary":"","source_name":"平台名","source_url":"原始链接","date":""}],"issues":[""],"summary":""}]}`;
+  let rawModelText = '';
   try {
     const response = await fetch(`${normalizeApiBase(settings.api_base)}/chat/completions`, {
       method: 'POST',
@@ -550,13 +697,15 @@ async function reviewJobsWithSecondary(profile, settings, leads, jobs) {
           { role: 'system', content: '严格依据来源复核校园招聘信息，只输出 JSON。' },
           { role: 'user', content: prompt }
         ],
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        max_tokens: 4000
       }),
-      signal: AbortSignal.timeout(120_000)
+      signal: AbortSignal.timeout(60_000)
     });
     const body = JSON.parse(await response.text());
     if (!response.ok) throw new Error(body?.error?.message || `AI 复核失败 (${response.status})`);
-    const parsed = parseJson(extractChatText(body));
+    rawModelText = extractChatText(body);
+    const parsed = parseJson(rawModelText);
     const reviews = new Map((parsed.reviews || []).map((review) => [urlKey(review.source_url), review]));
     return jobs.map((job) => {
       const review = reviews.get(urlKey(job.source_url));
@@ -585,7 +734,7 @@ async function reviewJobsWithSecondary(profile, settings, leads, jobs) {
       };
     });
   } catch (error) {
-    writeDiagnostic('last-secondary-review-error.txt', error.stack || error.message);
+    writeDiagnostic('last-secondary-review-error.txt', `${error.stack || error.message}\n\n--- model output ---\n${rawModelText.slice(0, 30_000)}`);
     return jobs;
   }
 }
@@ -604,7 +753,7 @@ async function attachSourceContent(leads, force = false) {
         selected[index] = {
           ...lead,
           ...Object.fromEntries(Object.entries(facts).filter(([, value]) => value)),
-          source_text: page.text.slice(0, 12_000),
+          source_text: page.text.slice(0, 2500),
           source_read_at: page.read_at,
           source_excerpt: page.text.slice(0, 20_000)
         };
@@ -670,10 +819,11 @@ function removeUnsupportedInferences(jobs, leads, profile) {
   });
 }
 
-async function structureLeadsWithChat(profile, settings, leads, sourceAttached = false) {
+async function structureLeadBatchWithChat(profile, settings, leads, sourceAttached = false) {
   const groundedLeads = sourceAttached ? leads : await attachSourceContent(leads);
   const provider = configuredProvider(settings);
   const url = `${normalizeApiBase(provider.api_base)}/chat/completions`;
+  let rawModelText = '';
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -684,31 +834,66 @@ async function structureLeadsWithChat(profile, settings, leads, sourceAttached =
           { role: 'system', content: '严格依据用户提供的招聘原文整理岗位，并只输出 JSON。原文明确字段优先于搜索摘要。' },
           { role: 'user', content: buildGroundedPrompt(profile, groundedLeads) }
         ],
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        max_tokens: 6000
       }),
-      signal: AbortSignal.timeout(90_000)
+      signal: AbortSignal.timeout(75_000)
     });
     const rawBody = await response.text();
     const body = JSON.parse(rawBody);
     if (!response.ok) throw new Error(body?.error?.message || `兼容接口请求失败 (${response.status})`);
-    const parsed = parseJson(extractChatText(body));
+    rawModelText = extractChatText(body);
+    const parsed = parseJson(rawModelText);
     const primaryJobs = removeUnsupportedInferences(
       applySourceFacts(normalizeJobs(parsed.jobs, groundedLeads.map((lead) => lead.source_url)), groundedLeads),
       groundedLeads,
       profile
     );
-    const jobs = await reviewJobsWithSecondary(profile, settings, groundedLeads, primaryJobs);
+    const represented = new Set(primaryJobs.map((job) => urlKey(job.source_url)));
+    const omittedFallbackJobs = removeUnsupportedInferences(
+      applySourceFacts(searchOnlyJobs(groundedLeads.filter((lead) => !represented.has(urlKey(lead.source_url))), profile), groundedLeads),
+      groundedLeads,
+      profile
+    );
+    const reviewedPrimaryJobs = await reviewJobsWithSecondary(profile, settings, groundedLeads, primaryJobs);
+    const combined = new Map();
+    for (const job of [...reviewedPrimaryJobs, ...omittedFallbackJobs]) combined.set(urlKey(job.source_url), job);
+    const jobs = [...combined.values()];
     if (jobs.length) {
       return { jobs, citations: groundedLeads.map((lead) => ({ url: lead.source_url, title: lead.title })), response_id: body.id || 'public-search' };
     }
   } catch (error) {
-    writeDiagnostic('last-ai-fallback-error.txt', error.stack || error.message);
+    writeDiagnostic('last-ai-fallback-error.txt', `${error.stack || error.message}\n\n--- model output ---\n${rawModelText.slice(0, 30_000)}`);
   }
   const fallbackJobs = removeUnsupportedInferences(applySourceFacts(searchOnlyJobs(groundedLeads, profile), groundedLeads), groundedLeads, profile);
   return {
-    jobs: await reviewJobsWithSecondary(profile, settings, groundedLeads, fallbackJobs),
+    // 初审已经失败时不重复发送同一批证据；保留为“表述模糊”，后续可单条补全。
+    jobs: fallbackJobs,
     citations: groundedLeads.map((lead) => ({ url: lead.source_url, title: lead.title })),
     response_id: 'search-only'
+  };
+}
+
+async function structureLeadsWithChat(profile, settings, leads, sourceAttached = false) {
+  const selected = leads.slice(0, 60);
+  const jobsByUrl = new Map();
+  const citationsByUrl = new Map();
+  const responseIds = [];
+  const batches = [];
+  for (let index = 0; index < selected.length; index += 6) batches.push(selected.slice(index, index + 6));
+  const settledBatches = await settleWithConcurrency(batches, 2,
+    (batch) => structureLeadBatchWithChat(profile, settings, batch, sourceAttached));
+  for (const settled of settledBatches) {
+    if (settled.status !== 'fulfilled') continue;
+    const result = settled.value;
+    for (const job of result.jobs || []) jobsByUrl.set(urlKey(job.source_url), job);
+    for (const citation of result.citations || []) citationsByUrl.set(urlKey(citation.url), citation);
+    if (result.response_id) responseIds.push(result.response_id);
+  }
+  return {
+    jobs: [...jobsByUrl.values()],
+    citations: [...citationsByUrl.values()],
+    response_id: responseIds.length > 1 ? `batch-${responseIds.length}` : (responseIds[0] || 'search-only')
   };
 }
 
@@ -756,9 +941,12 @@ async function discoverJobs(profile) {
 module.exports = {
   discoverJobs, parseJson, buildPrompt, normalizeApiBase,
   parseSearchResults, parseSogouResults, normalizeJobs,
+  parseJinaSearchResults, decodeBingRedirect, mergeLead,
   attachSourceContent, applySourceFacts, enrichJobFromSource, roundRobin, settleWithConcurrency,
   removeUnsupportedInferences, normalizeFitScore, descriptionQuality, pickBestDescription,
   collect91JobSource, collectConfiguredSources, isFallbackRelevant,
-  buildPublicSearchQueries, normalizeSchoolName, normalizeProvince, sourceAvailableForProfile, getProfileSourceSites,
+  searchOnlyJobs,
+  buildPublicSearchQueries, searchJinaBing, searchPublicLeads,
+  normalizeSchoolName, normalizeProvince, sourceAvailableForProfile, getProfileSourceSites,
   professionalSearchPlan
 };
