@@ -1,0 +1,13 @@
+node_modules/
+.DS_Store
+*.log
+jobfinder.db*
+.env
+.codex_resume_work/
+.data/
+data/
+cache/
+logs/
+*.db
+*.db-shm
+*.db-wal

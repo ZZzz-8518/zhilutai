@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>职路台</title>
+  <script>
+    if (window.location.protocol === 'file:') {
+      window.location.replace('http://127.0.0.1:4177');
+    }
+  </script>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">职</div>
+        <div><strong>职路台</strong><span>2027 校招工作台</span></div>
+      </div>
+
+      <div class="side-heading">
+        <span>当前画像</span>
+        <button class="icon-button" id="addProfileSide" title="新增画像" aria-label="新增画像"><i data-lucide="user-plus"></i></button>
+      </div>
+      <div class="profile-switcher" id="profileSwitcher"></div>
+
+      <nav class="side-nav" aria-label="主导航">
+        <button class="nav-item active" data-view="jobs"><i data-lucide="briefcase-business"></i><span>岗位池</span></button>
+        <button class="nav-item" data-view="watchlist"><i data-lucide="calendar-range"></i><span>校招日历</span></button>
+        <button class="nav-item" data-view="profiles"><i data-lucide="users"></i><span>画像</span></button>
+        <button class="nav-item" data-view="settings"><i data-lucide="settings-2"></i><span>采集设置</span></button>
+      </nav>
+
+      <div class="storage-note"><i data-lucide="hard-drive"></i><span>数据保存在 E 盘</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-button mobile-only" id="mobileMenu" aria-label="打开导航"><i data-lucide="menu"></i></button>
+        <div>
+          <h1 id="pageTitle">岗位池</h1>
+          <p id="pageSubtitle">按截止日期排列 · AI 初审与复核</p>
+        </div>
+        <div class="top-actions" id="jobsActions">
+          <button class="button secondary" id="addJobBtn"><i data-lucide="plus"></i><span>新增岗位</span></button>
+          <button class="button secondary" id="enrichAllBtn" title="只读取尚未处理或信息不完整的招聘来源"><i data-lucide="scan-text"></i><span>补全缺失信息</span></button>
+          <button class="button primary" id="collectBtn"><i data-lucide="sparkles"></i><span>AI 搜岗位</span></button>
+        </div>
+      </header>
+      <div class="mobile-action-dock" id="mobileJobsActions">
+        <button class="button secondary mobile-add-job"><i data-lucide="plus"></i><span>新增岗位</span></button>
+        <button class="button secondary mobile-enrich-all" title="只读取尚未处理或信息不完整的招聘来源"><i data-lucide="scan-text"></i><span>补全信息</span></button>
+        <button class="button primary mobile-collect"><i data-lucide="sparkles"></i><span>AI 搜岗位</span></button>
+      </div>
+
+      <section class="view active" id="jobsView">
+        <div class="stats-strip" id="statsStrip"></div>
+        <div class="job-toolbar">
+          <div class="search-field"><i data-lucide="search"></i><input id="jobSearch" type="search" placeholder="搜索公司、岗位或城市"></div>
+          <select id="employmentFilter" aria-label="招聘类型筛选">
+            <option value="non-intern">正式校招（隐藏实习）</option>
+            <option value="正式校招">仅正式校招</option>
+            <option value="校招+实习">校招与实习混合公告</option>
+            <option value="待确认">类型待确认</option>
+            <option value="实习">仅实习</option>
+            <option value="all">全部招聘类型</option>
+          </select>
+          <select id="eligibilityFilter" aria-label="报名口径筛选">
+            <option value="relevant">画像相关（推荐）</option>
+            <option value="all">全部岗位池</option>
+            <option value="明确符合">明确符合</option>
+            <option value="宽口径符合">宽口径符合</option>
+            <option value="未限制专业">未限制专业</option>
+            <option value="优先但不排他">优先但不排他</option>
+            <option value="表述模糊">表述模糊</option>
+            <option value="明确不符合">明确不符合</option>
+          </select>
+          <select id="companyTypeFilter" aria-label="公司类型筛选">
+            <option value="all">全部公司类型</option>
+          </select>
+          <select id="reviewFilter" aria-label="投递进度筛选">
+            <option value="active">进行中（手动记录）</option>
+            <option value="not_applied">未投递</option>
+            <option value="applied">已投递</option>
+            <option value="written_test">笔试</option>
+            <option value="interview">面试</option>
+            <option value="offer">Offer</option>
+            <option value="skipped">已放弃</option>
+            <option value="all">全部投递进度</option>
+          </select>
+          <select id="sortJobs" aria-label="岗位排序">
+            <option value="deadline">截止日期（默认）</option>
+            <option value="score">综合推荐</option>
+            <option value="distance">意向城市最近</option>
+            <option value="newest">最近收录</option>
+          </select>
+        </div>
+
+        <div class="workspace">
+          <div class="job-list" id="jobList"></div>
+          <aside class="job-detail" id="jobDetail"></aside>
+        </div>
+      </section>
+
+      <section class="view content-view" id="watchlistView">
+        <div class="section-bar">
+          <div><h2>重点企业校招日历</h2><p>依据往年批次预估，仅显示与当前画像相关的企业</p></div>
+          <div class="watch-filters" id="watchFilters"></div>
+        </div>
+        <div class="watch-table-wrap" id="watchlist"></div>
+      </section>
+
+      <section class="view content-view" id="profilesView">
+        <div class="section-bar">
+          <div><h2>求职画像</h2><p>每个人独立匹配，共用同一份岗位库</p></div>
+          <button class="button primary" id="addProfileBtn"><i data-lucide="user-plus"></i><span>新增画像</span></button>
+        </div>
+        <div class="profile-grid" id="profileGrid"></div>
+      </section>
+
+      <section class="view content-view" id="settingsView">
+        <div class="section-bar"><div><h2>采集设置</h2><p>AI 联网搜索与本地定时任务</p></div></div>
+        <form class="settings-form" id="settingsForm">
+          <section class="settings-section">
+            <div class="settings-title"><i data-lucide="brain-circuit"></i><div><h3>AI 接口 · 默认 DeepSeek</h3><p id="keyStatus"></p></div></div>
+            <label>API Key<input name="api_key" type="password" autocomplete="off" placeholder="留空表示不修改"></label>
+            <div class="form-row">
+              <label>模型<input name="model" value="deepseek-v4-pro"></label>
+              <label>接口地址<input name="api_base" value="https://api.deepseek.com"></label>
+            </div>
+            <label class="checkbox-row"><input name="clear_api_key" type="checkbox"><span>清除 API Key</span></label>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-title"><i data-lucide="library"></i><div><h3>定向数据源</h3><p id="sourceSiteStatus"></p></div></div>
+            <div id="profileSourceSummary" class="source-summary"></div>
+            <label>学校就业网与公开来源<textarea name="source_sites" rows="8" placeholder="名称 | 网址 | 公共/学校/省份 | 学校或省份 | 需登录/免登录"></textarea></label>
+            <p class="field-help">每行一个来源。学校来源只给对应学校画像，省份来源只给对应省份画像；旧格式“名称 | 网址”仍按公共来源使用。</p>
+          </section>
+
+          <section class="settings-section">
+            <div class="settings-title"><i data-lucide="clock-3"></i><div><h3>每日采集</h3><p>本地服务运行时生效</p></div></div>
+            <label class="toggle-row"><span>启用定时采集</span><input name="scheduler_enabled" type="checkbox" role="switch"></label>
+            <div class="form-row three">
+              <label>第一次<input name="schedule_1" type="time" value="08:30"></label>
+              <label>第二次<input name="schedule_2" type="time" value="13:00"></label>
+              <label>第三次<input name="schedule_3" type="time" value="20:30"></label>
+            </div>
+          </section>
+
+          <button class="button primary" type="submit"><i data-lucide="save"></i><span>保存设置</span></button>
+        </form>
+        <div class="runs-panel"><h3>最近采集</h3><div id="runsList"></div></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="profileDialog">
+    <form method="dialog" class="dialog-card" id="profileForm">
+      <div class="dialog-head"><div><h2 id="profileDialogTitle">新增画像</h2><p>专业和技能可随时修改</p></div><button type="button" class="icon-button close-dialog" aria-label="关闭"><i data-lucide="x"></i></button></div>
+      <input type="hidden" name="id">
+      <div class="form-row">
+        <label>画像名称<input name="name" required placeholder="例如：小李"></label>
+        <label>毕业年份<input name="graduation_year" type="number" value="2027" min="2026" max="2035"></label>
+      </div>
+      <div class="form-row">
+        <label>专业<input name="major" required placeholder="填写完整专业名称"></label>
+        <label>学历<select name="education"><option value="">未填写</option><option>专科</option><option>本科</option><option>硕士</option><option>博士</option></select></label>
+      </div>
+      <div class="form-row">
+        <label>学校<input name="school" list="schoolOptions" placeholder="学校名称"></label>
+        <label>学校所在省份<select name="school_province">
+          <option value="">未填写</option>
+          <option>北京</option><option>天津</option><option>河北</option><option>山西</option><option>内蒙古</option>
+          <option>辽宁</option><option>吉林</option><option>黑龙江</option><option>上海</option><option>江苏</option>
+          <option>浙江</option><option>安徽</option><option>福建</option><option>江西</option><option>山东</option>
+          <option>河南</option><option>湖北</option><option>湖南</option><option>广东</option><option>广西</option>
+          <option>海南</option><option>重庆</option><option>四川</option><option>贵州</option><option>云南</option>
+          <option>西藏</option><option>陕西</option><option>甘肃</option><option>青海</option><option>宁夏</option>
+          <option>新疆</option><option>香港</option><option>澳门</option><option>台湾</option>
+        </select></label>
+      </div>
+      <p class="field-help">学校会决定可使用的校内就业网，省份会决定可使用的省级就业平台；都留空时只用公共来源。</p>
+      <datalist id="schoolOptions">
+        <option value="中国矿业大学"></option><option value="同济大学"></option><option value="清华大学"></option>
+        <option value="上海交通大学"></option><option value="山东大学"></option><option value="华中科技大学"></option>
+        <option value="重庆大学"></option><option value="大连理工大学"></option><option value="哈尔滨工业大学"></option>
+        <option value="西安交通大学"></option><option value="天津大学"></option><option value="华北电力大学"></option>
+        <option value="长春工业大学"></option>
+      </datalist>
+      <label>相近专业<textarea name="related_majors" rows="2" placeholder="用逗号分隔"></textarea></label>
+      <label>技能<textarea name="skills" rows="2" placeholder="软件、语言、实验、项目能力等"></textarea></label>
+      <label>证书<textarea name="certificates" rows="2" placeholder="英语、职业资格等"></textarea></label>
+      <div class="form-row">
+        <label>意向行业<input name="preferred_industries" placeholder="可填写多个"></label>
+        <label>单位偏好<input name="preferred_employers" placeholder="国企、研究院、民企等"></label>
+      </div>
+      <label>意向城市<input name="preferred_cities" placeholder="例如：济南、青岛、北京；留空则地点不参与匹配"></label>
+      <div class="form-row">
+        <label>薪资底线<input name="salary_floor" placeholder="例如：税前 8k"></label>
+        <label>排除条件<input name="exclusions" placeholder="例如：纯销售、长期驻外"></label>
+      </div>
+      <label>补充说明<textarea name="notes" rows="2"></textarea></label>
+      <label class="checkbox-row"><input name="active" type="checkbox" checked><span>参与每日自动采集</span></label>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">取消</button><button class="button primary" type="submit">保存画像</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="jobDialog">
+    <form method="dialog" class="dialog-card" id="jobForm">
+      <div class="dialog-head"><div><h2>新增岗位</h2><p>先收录，稍后按画像自动计算</p></div><button type="button" class="icon-button close-dialog" aria-label="关闭"><i data-lucide="x"></i></button></div>
+      <div class="form-row">
+        <label>岗位名称<input name="title" required></label>
+        <label>公司<input name="company"></label>
+      </div>
+      <div class="form-row three">
+        <label>城市<input name="city" placeholder="例如：上海"></label>
+        <label>区县<input name="district"></label>
+        <label>截止日期<input name="deadline" type="date"></label>
+      </div>
+      <label>招聘原文链接<input name="source_url" type="url" placeholder="https://"></label>
+      <label>投递链接<input name="apply_url" type="url" placeholder="可直接网申或提交简历的页面"></label>
+      <label>来源名称<input name="source_name" placeholder="企业官网、高校就业网等"></label>
+      <label>公司类型<select name="company_type"><option>其他</option><option>央企</option><option>地方国企</option><option>大型民企或大厂</option><option>外企</option><option>事业单位</option></select></label>
+      <label>岗位要求<textarea name="description" rows="7" placeholder="粘贴专业、学历、技能等完整要求"></textarea></label>
+      <label>官方待遇<textarea name="official_benefits" rows="3"></textarea></label>
+      <div class="dialog-actions"><button type="button" class="button secondary close-dialog">取消</button><button class="button primary" type="submit">收录岗位</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
