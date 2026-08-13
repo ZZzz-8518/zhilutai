@@ -11,7 +11,7 @@ const VERIFIED_SOCIAL_REVIEWS = require('./src/verified-social-reviews');
 
 const PORT = Number(process.env.PORT) || 4177;
 const HOST = '127.0.0.1';
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 const collectingProfiles = new Set();
@@ -23,7 +23,13 @@ for (const item of VERIFIED_SOCIAL_REVIEWS) {
 }
 
 function send(res, status, body, contentType = 'application/json; charset=utf-8') {
-  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
+  res.writeHead(status, {
+    'Content-Type': contentType,
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
   res.end(contentType.startsWith('application/json') ? JSON.stringify(body) : body);
 }
 
@@ -99,6 +105,7 @@ async function enrichOneJob(jobId, profileId) {
 
 async function handleApi(req, res, url) {
   const method = req.method;
+  if (method === 'OPTIONS') return send(res, 204, '');
   const parts = url.pathname.split('/').filter(Boolean);
 
   if (method === 'GET' && url.pathname === '/api/bootstrap') {
@@ -106,6 +113,10 @@ async function handleApi(req, res, url) {
   }
   if (method === 'GET' && url.pathname === '/api/status') {
     return send(res, 200, { ok: true, app_version: APP_VERSION, data_dir: DATA_DIR, time: new Date().toISOString() });
+  }
+  if (method === 'GET' && parts[1] === 'profiles' && parts[2]) {
+    const profile = getProfile(parts[2]);
+    return profile ? send(res, 200, profile) : send(res, 404, { error: '画像不存在' });
   }
   if (method === 'POST' && url.pathname === '/api/profiles') {
     return send(res, 201, saveProfile(await readJson(req)));

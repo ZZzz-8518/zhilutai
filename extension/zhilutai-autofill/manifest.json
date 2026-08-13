@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "职路台网申填写助手",
+  "version": "0.1.0",
+  "description": "从本机职路台画像填写校招网页表单，不自动提交。",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["http://127.0.0.1:4177/*", "http://localhost:4177/*"],
+  "action": {
+    "default_title": "职路台网申填写助手",
+    "default_popup": "popup.html"
+  }
+}

@@ -1,0 +1,11 @@
+:root { color-scheme: light; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+body { width: 300px; margin: 0; padding: 16px; color: #1f2b26; background: #f7faf8; }
+header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+header strong { font-size: 18px; } header span { color: #6b7771; font-size: 12px; }
+.hint { color: #64716b; font-size: 12px; line-height: 1.5; margin: 0 0 14px; }
+.field { display: grid; gap: 5px; margin: 10px 0; font-size: 12px; color: #516059; }
+input, select { box-sizing: border-box; width: 100%; border: 1px solid #cdd8d2; border-radius: 5px; padding: 8px; background: #fff; color: #1f2b26; }
+button { width: 100%; border: 0; border-radius: 5px; padding: 9px 10px; margin-top: 8px; color: white; background: #176b4d; cursor: pointer; font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; } button.secondary { color: #315045; background: #e4eee8; }
+#status { min-height: 18px; color: #4e665a; font-size: 12px; line-height: 1.4; margin: 10px 0 0; }
+#status.error { color: #a53d36; }

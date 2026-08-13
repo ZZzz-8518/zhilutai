@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>职路台填写助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><strong>职路台</strong><span>网申填写助手</span></header>
+  <p class="hint">选择画像后填写当前招聘网页。不会自动提交。</p>
+  <label class="field">本地服务地址<input id="apiBase" value="http://127.0.0.1:4177"></label>
+  <label class="field">画像<select id="profiles"><option>正在读取...</option></select></label>
+  <button id="fill" disabled>读取画像并填写</button>
+  <button id="reload" class="secondary">重新读取画像</button>
+  <p id="status" role="status"></p>
+  <script src="popup.js"></script>
+</body>
+</html>

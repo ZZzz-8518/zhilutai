@@ -73,6 +73,8 @@ db.exec(`
     salary_floor TEXT NOT NULL DEFAULT '',
     exclusions TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -168,6 +170,8 @@ db.exec(`
 const profileColumns = new Set(db.prepare('PRAGMA table_info(profiles)').all().map((column) => column.name));
 if (!profileColumns.has('preferred_cities')) db.exec("ALTER TABLE profiles ADD COLUMN preferred_cities TEXT NOT NULL DEFAULT ''");
 if (!profileColumns.has('school_province')) db.exec("ALTER TABLE profiles ADD COLUMN school_province TEXT NOT NULL DEFAULT ''");
+if (!profileColumns.has('phone')) db.exec("ALTER TABLE profiles ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
+if (!profileColumns.has('email')) db.exec("ALTER TABLE profiles ADD COLUMN email TEXT NOT NULL DEFAULT ''");
 for (const profile of db.prepare("SELECT id,school FROM profiles WHERE school_province=''").all()) {
   const province = KNOWN_SCHOOL_PROVINCES[profile.school];
   if (province) db.prepare('UPDATE profiles SET school_province=? WHERE id=?').run(province, profile.id);
@@ -260,6 +264,8 @@ function saveProfile(input) {
     salary_floor: String(input.salary_floor || '').trim(),
     exclusions: String(input.exclusions || '').trim(),
     notes: String(input.notes || '').trim(),
+    phone: String(input.phone || '').trim(),
+    email: String(input.email || '').trim(),
     active: input.active === false ? 0 : 1,
     created_at: existing?.created_at || timestamp,
     updated_at: timestamp
@@ -268,10 +274,10 @@ function saveProfile(input) {
   if (!record.major) throw new Error('请填写专业');
   db.prepare(`INSERT INTO profiles (
     id,name,major,related_majors,education,graduation_year,school,school_province,skills,certificates,
-    preferred_industries,preferred_employers,salary_floor,exclusions,notes,active,created_at,updated_at,preferred_cities
+    preferred_industries,preferred_employers,salary_floor,exclusions,notes,phone,email,active,created_at,updated_at,preferred_cities
   ) VALUES (
     @id,@name,@major,@related_majors,@education,@graduation_year,@school,@school_province,@skills,@certificates,
-    @preferred_industries,@preferred_employers,@salary_floor,@exclusions,@notes,@active,@created_at,@updated_at,@preferred_cities
+    @preferred_industries,@preferred_employers,@salary_floor,@exclusions,@notes,@phone,@email,@active,@created_at,@updated_at,@preferred_cities
   ) ON CONFLICT(id) DO UPDATE SET
     name=excluded.name, major=excluded.major, related_majors=excluded.related_majors,
     education=excluded.education, graduation_year=excluded.graduation_year, school=excluded.school,
@@ -279,7 +285,8 @@ function saveProfile(input) {
     skills=excluded.skills, certificates=excluded.certificates, preferred_industries=excluded.preferred_industries,
     preferred_cities=excluded.preferred_cities,
     preferred_employers=excluded.preferred_employers, salary_floor=excluded.salary_floor,
-    exclusions=excluded.exclusions, notes=excluded.notes, active=excluded.active, updated_at=excluded.updated_at`).run(record);
+    exclusions=excluded.exclusions, notes=excluded.notes, phone=excluded.phone, email=excluded.email,
+    active=excluded.active, updated_at=excluded.updated_at`).run(record);
   recalculateProfile(profileId);
   return getProfile(profileId);
 }
