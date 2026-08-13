@@ -36,7 +36,8 @@ function stopExistingServer() {
     '  $process = Get-Process -Id $listener.OwningProcess -ErrorAction Stop',
     "  if ($process.ProcessName -ne 'node') { throw \"端口 4177 被其他程序占用：$($process.ProcessName)\" }",
     '  Stop-Process -Id $listener.OwningProcess -Force',
-    '}'
+    '}',
+    'exit 0'
   ].join('\n');
   execFileSync('powershell.exe', ['-NoProfile', '-Command', script], {
     windowsHide: true,
