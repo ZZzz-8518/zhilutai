@@ -11,7 +11,7 @@ const VERIFIED_SOCIAL_REVIEWS = require('./src/verified-social-reviews');
 
 const PORT = Number(process.env.PORT) || 4177;
 const HOST = '127.0.0.1';
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 const collectingProfiles = new Set();
@@ -23,13 +23,7 @@ for (const item of VERIFIED_SOCIAL_REVIEWS) {
 }
 
 function send(res, status, body, contentType = 'application/json; charset=utf-8') {
-  res.writeHead(status, {
-    'Content-Type': contentType,
-    'Cache-Control': 'no-store',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
+  res.writeHead(status, { 'Content-Type': contentType, 'Cache-Control': 'no-store' });
   res.end(contentType.startsWith('application/json') ? JSON.stringify(body) : body);
 }
 
@@ -105,7 +99,6 @@ async function enrichOneJob(jobId, profileId) {
 
 async function handleApi(req, res, url) {
   const method = req.method;
-  if (method === 'OPTIONS') return send(res, 204, '');
   const parts = url.pathname.split('/').filter(Boolean);
 
   if (method === 'GET' && url.pathname === '/api/bootstrap') {

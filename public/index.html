@@ -171,6 +171,26 @@
         <label>邮箱<input name="email" type="email" autocomplete="email" placeholder="用于网申自动填写"></label>
       </div>
       <div class="form-row">
+        <label>身份证号<input name="id_number" type="text" autocomplete="off" placeholder="仅保存在本机"></label>
+        <label>性别<input name="gender" placeholder="例如：男"></label>
+      </div>
+      <div class="form-row">
+        <label>民族<input name="ethnicity" placeholder="例如：汉族"></label>
+        <label>籍贯<input name="native_place" placeholder="例如：山东济南"></label>
+      </div>
+      <div class="form-row">
+        <label>政治面貌<input name="political_status" placeholder="例如：中共党员"></label>
+        <label>外语水平<input name="foreign_language" placeholder="例如：CET-6 520分"></label>
+      </div>
+      <div class="form-row">
+        <label>是否留学生<input name="overseas_student" placeholder="例如：否"></label>
+        <label>健康状况<input name="health_status" placeholder="例如：健康"></label>
+      </div>
+      <div class="form-row">
+        <label>现居住地<input name="current_residence" placeholder="例如：江苏徐州"></label>
+        <label>期望工作地点<input name="preferred_cities" placeholder="例如：济南、青岛、北京"></label>
+      </div>
+      <div class="form-row">
         <label>专业<input name="major" required placeholder="填写完整专业名称"></label>
         <label>学历<select name="education"><option value="">未填写</option><option>专科</option><option>本科</option><option>硕士</option><option>博士</option></select></label>
       </div>
@@ -202,7 +222,7 @@
         <label>意向行业<input name="preferred_industries" placeholder="可填写多个"></label>
         <label>单位偏好<input name="preferred_employers" placeholder="国企、研究院、民企等"></label>
       </div>
-      <label>意向城市<input name="preferred_cities" placeholder="例如：济南、青岛、北京；留空则地点不参与匹配"></label>
+      <label>实习/项目经历<textarea name="experience_text" rows="3" placeholder="每段一行：开始日期|结束日期|单位名称|岗位名称|工作内容"></textarea></label>
       <div class="form-row">
         <label>薪资底线<input name="salary_floor" placeholder="例如：税前 8k"></label>
         <label>排除条件<input name="exclusions" placeholder="例如：纯销售、长期驻外"></label>

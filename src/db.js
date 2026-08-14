@@ -75,6 +75,16 @@ db.exec(`
     notes TEXT NOT NULL DEFAULT '',
     phone TEXT NOT NULL DEFAULT '',
     email TEXT NOT NULL DEFAULT '',
+    id_number TEXT NOT NULL DEFAULT '',
+    gender TEXT NOT NULL DEFAULT '',
+    ethnicity TEXT NOT NULL DEFAULT '',
+    native_place TEXT NOT NULL DEFAULT '',
+    political_status TEXT NOT NULL DEFAULT '',
+    foreign_language TEXT NOT NULL DEFAULT '',
+    overseas_student TEXT NOT NULL DEFAULT '',
+    health_status TEXT NOT NULL DEFAULT '',
+    current_residence TEXT NOT NULL DEFAULT '',
+    experience_text TEXT NOT NULL DEFAULT '',
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -172,6 +182,9 @@ if (!profileColumns.has('preferred_cities')) db.exec("ALTER TABLE profiles ADD C
 if (!profileColumns.has('school_province')) db.exec("ALTER TABLE profiles ADD COLUMN school_province TEXT NOT NULL DEFAULT ''");
 if (!profileColumns.has('phone')) db.exec("ALTER TABLE profiles ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
 if (!profileColumns.has('email')) db.exec("ALTER TABLE profiles ADD COLUMN email TEXT NOT NULL DEFAULT ''");
+for (const column of ['id_number', 'gender', 'ethnicity', 'native_place', 'political_status', 'foreign_language', 'overseas_student', 'health_status', 'current_residence', 'experience_text']) {
+  if (!profileColumns.has(column)) db.exec(`ALTER TABLE profiles ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`);
+}
 for (const profile of db.prepare("SELECT id,school FROM profiles WHERE school_province=''").all()) {
   const province = KNOWN_SCHOOL_PROVINCES[profile.school];
   if (province) db.prepare('UPDATE profiles SET school_province=? WHERE id=?').run(province, profile.id);
@@ -266,6 +279,16 @@ function saveProfile(input) {
     notes: String(input.notes || '').trim(),
     phone: String(input.phone || '').trim(),
     email: String(input.email || '').trim(),
+    id_number: String(input.id_number || '').trim(),
+    gender: String(input.gender || '').trim(),
+    ethnicity: String(input.ethnicity || '').trim(),
+    native_place: String(input.native_place || '').trim(),
+    political_status: String(input.political_status || '').trim(),
+    foreign_language: String(input.foreign_language || '').trim(),
+    overseas_student: String(input.overseas_student || '').trim(),
+    health_status: String(input.health_status || '').trim(),
+    current_residence: String(input.current_residence || '').trim(),
+    experience_text: String(input.experience_text || '').trim(),
     active: input.active === false ? 0 : 1,
     created_at: existing?.created_at || timestamp,
     updated_at: timestamp
@@ -274,10 +297,10 @@ function saveProfile(input) {
   if (!record.major) throw new Error('请填写专业');
   db.prepare(`INSERT INTO profiles (
     id,name,major,related_majors,education,graduation_year,school,school_province,skills,certificates,
-    preferred_industries,preferred_employers,salary_floor,exclusions,notes,phone,email,active,created_at,updated_at,preferred_cities
+    preferred_industries,preferred_employers,salary_floor,exclusions,notes,phone,email,id_number,gender,ethnicity,native_place,political_status,foreign_language,overseas_student,health_status,current_residence,experience_text,active,created_at,updated_at,preferred_cities
   ) VALUES (
     @id,@name,@major,@related_majors,@education,@graduation_year,@school,@school_province,@skills,@certificates,
-    @preferred_industries,@preferred_employers,@salary_floor,@exclusions,@notes,@phone,@email,@active,@created_at,@updated_at,@preferred_cities
+    @preferred_industries,@preferred_employers,@salary_floor,@exclusions,@notes,@phone,@email,@id_number,@gender,@ethnicity,@native_place,@political_status,@foreign_language,@overseas_student,@health_status,@current_residence,@experience_text,@active,@created_at,@updated_at,@preferred_cities
   ) ON CONFLICT(id) DO UPDATE SET
     name=excluded.name, major=excluded.major, related_majors=excluded.related_majors,
     education=excluded.education, graduation_year=excluded.graduation_year, school=excluded.school,
@@ -286,6 +309,11 @@ function saveProfile(input) {
     preferred_cities=excluded.preferred_cities,
     preferred_employers=excluded.preferred_employers, salary_floor=excluded.salary_floor,
     exclusions=excluded.exclusions, notes=excluded.notes, phone=excluded.phone, email=excluded.email,
+    id_number=excluded.id_number, gender=excluded.gender, ethnicity=excluded.ethnicity,
+    native_place=excluded.native_place, political_status=excluded.political_status,
+    foreign_language=excluded.foreign_language, overseas_student=excluded.overseas_student,
+    health_status=excluded.health_status, current_residence=excluded.current_residence,
+    experience_text=excluded.experience_text,
     active=excluded.active, updated_at=excluded.updated_at`).run(record);
   recalculateProfile(profileId);
   return getProfile(profileId);

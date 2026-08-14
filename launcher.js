@@ -11,7 +11,7 @@ const DEFAULT_DATA_DIR = process.platform === 'win32' && fs.existsSync('E:\\')
 const DATA_DIR = path.resolve(process.env.JOB_FINDER_DATA_DIR || DEFAULT_DATA_DIR);
 const LOG_DIR = path.join(DATA_DIR, 'logs');
 const URL = 'http://127.0.0.1:4177';
-const EXPECTED_APP_VERSION = 8;
+const EXPECTED_APP_VERSION = 9;
 const SHOULD_OPEN = !process.argv.includes('--no-open');
 
 function windowsSystemProxy() {
