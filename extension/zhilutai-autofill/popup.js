@@ -47,14 +47,18 @@ async function fillCurrentPage() {
     const profile = await response.json();
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('未找到当前网页');
-    const result = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: fillFormFields, args: [profile] });
-    const summary = result?.[0]?.result || { filled: 0, skipped: 0 };
+    const result = await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: fillFormFields, args: [profile] });
+    const summary = (result || []).reduce((total, item) => ({
+      filled: total.filled + Number(item.result?.filled || 0),
+      skipped: total.skipped + Number(item.result?.skipped || 0),
+      matched: total.matched + Number(item.result?.matched || 0)
+    }), { filled: 0, skipped: 0, matched: 0 });
     await chrome.storage.local.set({ apiBase: base, profileId });
-    showStatus(`已填写 ${summary.filled} 项，跳过 ${summary.skipped} 项。请检查后手动提交。`);
+    showStatus(`已填写 ${summary.filled} 项，识别到 ${summary.matched} 项，跳过 ${summary.skipped} 项。请检查后手动提交。`);
   } catch (error) { showStatus(error.message, true); }
 }
 
-function fillFormFields(profile) {
+async function fillFormFields(profile) {
   const values = {
     name: profile.name,
     realname: profile.name,
@@ -104,25 +108,62 @@ function fillFormFields(profile) {
     city: ['期望工作地点', '意向工作地点'], address: ['现居住地', '居住地']
   };
   const normalize = (value) => String(value || '').toLowerCase().replace(/[\s_\-（）()]/g, '');
+  const contextText = (element) => {
+    const chunks = [element.name, element.id, element.placeholder, element.getAttribute('aria-label') || '', element.labels?.[0]?.textContent || ''];
+    const fieldNode = element.closest?.('label, .el-form-item, .ant-form-item, .form-item, [class*="form-item"], [class*="field"], td, li') || element.parentElement;
+    const fieldText = String(fieldNode?.innerText || fieldNode?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (fieldText && fieldText.length <= 180) chunks.push(fieldText);
+    const previous = element.previousElementSibling;
+    if (previous?.textContent) chunks.push(previous.textContent);
+    return normalize(chunks.join(' '));
+  };
+  const setTextValue = (element, value) => {
+    const text = String(value);
+    if (element.isContentEditable) element.textContent = text;
+    else {
+      const prototype = Object.getPrototypeOf(element);
+      const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set
+        || Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(element, text);
+      if (element.value !== text) element.value = text;
+    }
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    element.dispatchEvent(new Event('blur', { bubbles: true }));
+  };
+  const chooseCustomOption = async (element, value) => {
+    if (!element.readOnly && element.getAttribute('aria-haspopup') !== 'listbox') return false;
+    element.click();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const wanted = normalize(value);
+    const options = [...document.querySelectorAll('[role="option"], .el-select-dropdown__item, .ant-select-item-option, li')]
+      .filter((option) => option.offsetParent !== null && normalize(option.textContent).includes(wanted));
+    if (!options.length) return false;
+    options[0].click();
+    return true;
+  };
   const elements = [...document.querySelectorAll('input, textarea, select, [contenteditable="true"]')].filter((element) => !element.disabled && element.type !== 'hidden' && element.type !== 'file' && element.type !== 'password');
   let filled = 0;
+  let matched = 0;
   for (const element of elements) {
-    const label = normalize(`${element.name} ${element.id} ${element.placeholder} ${element.getAttribute('aria-label') || ''} ${element.labels?.[0]?.textContent || ''}`);
+    const label = contextText(element);
     const key = Object.keys(values).find((candidate) => label.includes(normalize(candidate)) || (aliases[candidate] || []).some((alias) => label.includes(normalize(alias))));
     const value = key ? values[key] : '';
-    if (!value || !key || element.value) continue;
+    if (!key) continue;
+    matched += 1;
+    if (!value || element.value) continue;
     if (element.tagName === 'SELECT') {
       const option = [...element.options].find((item) => normalize(item.textContent).includes(normalize(value)) || normalize(value).includes(normalize(item.textContent)));
       if (!option) continue;
       element.value = option.value;
+      element.dispatchEvent(new Event('change', { bubbles: true }));
     } else if (element.isContentEditable) {
-      element.textContent = String(value);
+      setTextValue(element, value);
     } else {
-      const setter = Object.getOwnPropertyDescriptor(element.constructor.prototype, 'value')?.set;
-      setter?.call(element, String(value));
+      if (element.readOnly || element.getAttribute('aria-haspopup') === 'listbox') {
+        if (!(await chooseCustomOption(element, value))) setTextValue(element, value);
+      } else setTextValue(element, value);
     }
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
     filled += 1;
   }
   const experiences = String(profile.experience_text || '').split(/\n+/).map((line) => line.split('|').map((item) => item.trim())).filter((parts) => parts.length >= 5 && parts.some(Boolean));
@@ -138,18 +179,15 @@ function fillFormFields(profile) {
       if (!field.value) continue;
       const target = elements.find((element) => {
         if (element.value || element.textContent?.trim()) return false;
-        const label = normalize(`${element.name} ${element.id} ${element.placeholder} ${element.getAttribute('aria-label') || ''} ${element.labels?.[0]?.textContent || ''}`);
+        const label = contextText(element);
         return field.terms.some((term) => label.includes(normalize(term)));
       });
       if (!target) continue;
-      if (target.tagName === 'TEXTAREA' || target.isContentEditable) target.value = field.value;
-      else target.value = field.value;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
-      target.dispatchEvent(new Event('change', { bubbles: true }));
+      setTextValue(target, field.value);
       filled += 1;
     }
   }
-  return { filled, skipped: Math.max(0, elements.length - filled) };
+  return { filled, skipped: Math.max(0, elements.length - filled), matched };
 }
 
 $('#fill').addEventListener('click', fillCurrentPage);
