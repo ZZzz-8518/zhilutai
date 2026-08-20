@@ -11,7 +11,7 @@ const VERIFIED_SOCIAL_REVIEWS = require('./src/verified-social-reviews');
 
 const PORT = Number(process.env.PORT) || 4177;
 const HOST = '127.0.0.1';
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml' };
 const collectingProfiles = new Set();

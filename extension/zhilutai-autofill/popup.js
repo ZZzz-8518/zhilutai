@@ -80,9 +80,9 @@ async function fillFormFields(profile) {
     overseas: profile.overseas_student,
     healthstatus: profile.health_status,
     health: profile.health_status,
-    phone: profile.phone,
-    mobile: profile.phone,
-    telephone: profile.phone,
+    phone: normalizePhone(profile.phone),
+    mobile: normalizePhone(profile.phone),
+    telephone: normalizePhone(profile.phone),
     email: profile.email,
     school: profile.school,
     university: profile.school,
@@ -96,17 +96,30 @@ async function fillFormFields(profile) {
     skills: profile.skills,
     certificates: profile.certificates,
     city: profile.preferred_cities,
-    address: profile.current_residence
+    address: profile.current_residence,
+    preferredrole: profile.preferred_roles,
+    jobintention: profile.preferred_roles,
+    willingadjustment: profile.willing_adjustment,
+    studytype: profile.study_type,
+    enrollmentdate: profile.enrollment_date
   };
   const aliases = {
     name: ['姓名', '真实姓名', '应聘者姓名'], idnumber: ['身份证号', '身份证号码', '证件号码'], gender: ['性别'],
     ethnicity: ['民族'], nativeplace: ['籍贯'], politicalstatus: ['政治面貌'], foreignlanguage: ['外语水平', '英语水平'],
     overseasstudent: ['是否留学生', '留学生'], healthstatus: ['健康状况', '身体状况'],
     phone: ['手机', '手机号', '联系电话', '移动电话'], email: ['邮箱', '电子邮箱', 'Email'],
-    school: ['学校', '毕业院校', '院校'], major: ['专业', '所学专业'], education: ['学历', '最高学历'], degree: ['学位'],
+    school: ['学校', '学校名称', '学籍', '毕业院校', '院校'], major: ['专业', '所学专业'], education: ['学历', '最高学历'], degree: ['学位'],
     graduationyear: ['毕业年份', '预计毕业时间', '毕业时间'], skills: ['技能', '个人特长'], certificates: ['证书', '资格证书'],
-    city: ['期望工作地点', '意向工作地点'], address: ['现居住地', '居住地']
+    city: ['期望工作地点', '意向工作地点'], address: ['现居住地', '居住地'],
+    preferredrole: ['意向岗位', '求职岗位', '岗位名称'], jobintention: ['求职意向'],
+    willingadjustment: ['是否服从调剂', '服从调剂'], studytype: ['学习性质'], enrollmentdate: ['入学时间']
   };
+  function normalizePhone(value) {
+    let digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith('0086')) digits = digits.slice(4);
+    else if (digits.startsWith('86') && digits.length === 13) digits = digits.slice(2);
+    return digits;
+  }
   const normalize = (value) => String(value || '').toLowerCase().replace(/[\s_\-（）()]/g, '');
   const contextText = (element) => {
     const chunks = [element.name, element.id, element.placeholder, element.getAttribute('aria-label') || '', element.labels?.[0]?.textContent || ''];
@@ -132,13 +145,17 @@ async function fillFormFields(profile) {
     element.dispatchEvent(new Event('blur', { bubbles: true }));
   };
   const chooseCustomOption = async (element, value) => {
-    if (!element.readOnly && element.getAttribute('aria-haspopup') !== 'listbox') return false;
-    element.click();
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    const owner = element.closest?.('.el-select, .ant-select, .select, [role="combobox"], [class*="select"]');
+    const isCustom = element.readOnly || element.getAttribute('aria-haspopup') === 'listbox'
+      || element.getAttribute('role') === 'combobox' || Boolean(owner);
+    if (!isCustom) return false;
+    (owner || element).click();
+    await new Promise((resolve) => setTimeout(resolve, 180));
     const wanted = normalize(value);
-    const options = [...document.querySelectorAll('[role="option"], .el-select-dropdown__item, .ant-select-item-option, li')]
+    const options = [...document.querySelectorAll('[role="option"], .el-select-dropdown__item, .ant-select-item-option, .el-option, .el-cascader-node, li')]
       .filter((option) => option.offsetParent !== null && normalize(option.textContent).includes(wanted));
     if (!options.length) return false;
+    options[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     options[0].click();
     return true;
   };
@@ -160,8 +177,8 @@ async function fillFormFields(profile) {
     } else if (element.isContentEditable) {
       setTextValue(element, value);
     } else {
-      if (element.readOnly || element.getAttribute('aria-haspopup') === 'listbox') {
-        if (!(await chooseCustomOption(element, value))) setTextValue(element, value);
+      if (element.readOnly || element.getAttribute('aria-haspopup') === 'listbox' || element.getAttribute('role') === 'combobox' || element.closest?.('[class*="select"]')) {
+        if (!(await chooseCustomOption(element, value))) continue;
       } else setTextValue(element, value);
     }
     filled += 1;
